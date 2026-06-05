@@ -116,7 +116,7 @@
     <button class="btn sub" id="refreshBtn">현황 새로고침</button>
     <div class="divider"></div>
     <div class="h2">🖼️ 포토카드 이미지 (5종)</div>
-    <p class="small">현재 5장은 페이지에 내장돼 모든 참여자에게 보여요. 아래에서 올리면 <b>이 브라우저에서만 미리보기</b>로 바뀌고, 모두에게 바꾸려면 이미지 교체 후 재배포가 필요해요.</p>
+    <p class="small">앞면·뒷면을 각각 올리면 <b>서버에 저장돼 모든 참여자에게 즉시 적용</b>됩니다. (큰 이미지는 자동 축소)</p>
     <div class="cardgrid" id="cardGrid"></div>
     <div class="msg" id="cardMsg"></div>
 
@@ -168,13 +168,12 @@ const CARDS = {"1": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYE
 
 const $ = id => document.getElementById(id);
 let ADMIN_PW = "";
-const OV_KEY="ihoon_card_override_v1";
-const OV_KEY_B="ihoon_card_override_b_v1";
-let CARD_OV={}; try{ CARD_OV=JSON.parse(localStorage.getItem(OV_KEY))||{}; }catch(e){ CARD_OV={}; }
-let CARD_OV_B={}; try{ CARD_OV_B=JSON.parse(localStorage.getItem(OV_KEY_B))||{}; }catch(e){ CARD_OV_B={}; }
 const CARDS_B={};
-function imgSrc(n,side){ return side==='b' ? (CARD_OV_B[n]||CARDS_B[n]||"") : (CARD_OV[n]||CARDS[n]||""); }
+let SRV={};   // 서버 저장 이미지 {"n_f":dataURL,"n_b":dataURL}
+function imgSrc(n,side){ const k=n+'_'+(side==='b'?'b':'f'); return SRV[k] || (side==='b' ? (CARDS_B[n]||"") : (CARDS[n]||"")); }
 function cardSrc(n){ return imgSrc(n,'f'); }
+async function loadCardImgs(n){ try{ const g=await api({action:'getimg', n}); if(g.ok){ if(g.f) SRV[n+'_f']=g.f; if(g.b) SRV[n+'_b']=g.b; } }catch(e){} }
+async function loadAllImgs(){ try{ const r=await api({action:'getimgs', adminPw:ADMIN_PW}); if(r.ok){ SRV=Object.assign({}, SRV, r.images||{}); renderCardGrid(); } }catch(e){} }
 
 if(!API_URL){ $("setup").style.display="block"; }
 
@@ -209,7 +208,7 @@ $("claimBtn").onclick = async ()=>{
   $("claimBtn").disabled=true; m.textContent="확인 중…";
   try{
     const r=await api({action:"claim", email});
-    if(r.ok){ m.className="msg ok"; m.textContent=r.already?"이미 받으신 포토카드예요. 아래에서 다시 저장할 수 있어요.":"축하합니다! 포토카드가 도착했어요 🎉"; renderCard(r.card); }
+    if(r.ok){ m.className="msg ok"; m.textContent=r.already?"이미 받으신 포토카드예요. 아래에서 다시 저장할 수 있어요.":"축하합니다! 포토카드가 도착했어요 🎉"; await loadCardImgs(r.card); renderCard(r.card); }
     else if(r.error==="not_in_list"){ m.className="msg err"; m.textContent="프리세이브 참여 명단에서 찾을 수 없어요. 신청하신 이메일이 맞는지 확인해 주세요."; $("result").style.display="none"; }
     else { m.className="msg err"; m.textContent="처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요."; }
   }catch(e){ m.className="msg err"; m.textContent="네트워크 오류. 잠시 후 다시 시도해 주세요."; }
@@ -224,7 +223,7 @@ $("adminLink").onclick = async ()=>{
   if(p===null) return;
   try{
     const r=await api({action:"list", adminPw:p});
-    if(r && r.ok){ ADMIN_PW=p; a.style.display="block"; refreshStats(); renderCardGrid(); prefillList(); }
+    if(r && r.ok){ ADMIN_PW=p; a.style.display="block"; refreshStats(); renderCardGrid(); prefillList(); loadAllImgs(); }
     else { alert("운영자 비밀번호가 올바르지 않습니다."); }
   }catch(e){ alert("네트워크 오류로 확인하지 못했어요. 잠시 후 다시 시도해 주세요."); }
 };
@@ -291,26 +290,26 @@ $("resetBtn").onclick = async ()=>{
   catch(e){ om.className="msg err"; om.textContent="네트워크 오류."; }
 };
 
-function fileToCard(file,n,side,cb){
-  const r=new FileReader();
-  r.onload=()=>{ const im=new Image();
-    im.onload=()=>{ const maxW=945,scale=Math.min(1,maxW/im.width);
+async function fileToCard(file,n,side,cb){
+  const reader=new FileReader();
+  reader.onload=()=>{ const im=new Image();
+    im.onload=async ()=>{ const maxW=945,scale=Math.min(1,maxW/im.width);
       const w=Math.round(im.width*scale),h=Math.round(im.height*scale);
       const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
       cv.getContext("2d").drawImage(im,0,0,w,h);
-      try{ const u=cv.toDataURL("image/jpeg",0.85);
-        if(side==='b'){ CARD_OV_B[n]=u; localStorage.setItem(OV_KEY_B,JSON.stringify(CARD_OV_B)); }
-        else { CARD_OV[n]=u; localStorage.setItem(OV_KEY,JSON.stringify(CARD_OV)); }
-        cb&&cb(true); }
-      catch(e){ cb&&cb(false,"이미지가 너무 큽니다."); } };
-    im.onerror=()=>cb&&cb(false,"이미지를 읽을 수 없습니다."); im.src=r.result; };
-  r.readAsDataURL(file);
+      let u; try{ u=cv.toDataURL("image/jpeg",0.82); }catch(e){ cb&&cb(false,"이미지 처리 실패"); return; }
+      try{ const r=await apiPost({action:"setimg", adminPw:ADMIN_PW, n, side, data:u});
+        if(r.error==="auth"){ cb&&cb(false,"운영자 비밀번호가 올바르지 않습니다."); return; }
+        if(r.ok){ SRV[n+'_'+side]=u; cb&&cb(true); } else { cb&&cb(false,"저장 실패"); } }
+      catch(e){ cb&&cb(false,"네트워크 오류(이미지가 너무 클 수 있어요)"); } };
+    im.onerror=()=>cb&&cb(false,"이미지를 읽을 수 없습니다."); im.src=reader.result; };
+  reader.readAsDataURL(file);
 }
 function miniSlot(n,side,label){
-  const s=imgSrc(n,side), ov= side==='b'?!!CARD_OV_B[n]:!!CARD_OV[n];
+  const s=imgSrc(n,side), has=!!SRV[n+'_'+side];
   return `<div class="cmini"><div class="thumb">${s?`<img src="${s}">`:`<span>${label}<br><small>없음</small></span>`}</div>`+
-    `<label class="upl">${label}${ov?'✓':''}<input type="file" accept="image/*" data-n="${n}" data-side="${side}" hidden></label>`+
-    (ov?`<a class="del" data-del="${n}" data-side="${side}">되돌리기</a>`:``)+`</div>`;
+    `<label class="upl">${label}${has?'✓':''}<input type="file" accept="image/*" data-n="${n}" data-side="${side}" hidden></label>`+
+    (has?`<a class="del" data-del="${n}" data-side="${side}">삭제</a>`:``)+`</div>`;
 }
 function renderCardGrid(){
   const g=$("cardGrid"); if(!g) return; g.innerHTML="";
@@ -321,13 +320,13 @@ function renderCardGrid(){
     g.appendChild(cell);
   }
   g.querySelectorAll('input[type=file]').forEach(inp=>{ inp.onchange=e=>{ const f=e.target.files[0]; if(!f)return;
-    const m=$("cardMsg"); m.className="msg"; m.textContent="저장 중…";
+    const m=$("cardMsg"); m.className="msg"; m.textContent="업로드·저장 중…";
     fileToCard(f,+inp.dataset.n,inp.dataset.side,(ok,err)=>{ renderCardGrid(); m.className="msg "+(ok?"ok":"err");
-      m.textContent=ok?`${CARD_NAMES[inp.dataset.n-1]||inp.dataset.n} ${inp.dataset.side==='b'?'뒷면':'앞면'} 미리보기를 바꿨어요(이 브라우저만).`:(err||"실패"); }); }; });
-  g.querySelectorAll('[data-del]').forEach(a=>{ a.onclick=()=>{ const n=+a.dataset.del, side=a.dataset.side;
-    if(side==='b'){ delete CARD_OV_B[n]; localStorage.setItem(OV_KEY_B,JSON.stringify(CARD_OV_B)); }
-    else { delete CARD_OV[n]; localStorage.setItem(OV_KEY,JSON.stringify(CARD_OV)); }
-    renderCardGrid(); }; });
+      m.textContent=ok?`${CARD_NAMES[inp.dataset.n-1]||inp.dataset.n} ${inp.dataset.side==='b'?'뒷면':'앞면'} 저장됨 (모든 참여자에게 적용).`:(err||"실패"); }); }; });
+  g.querySelectorAll('[data-del]').forEach(a=>{ a.onclick=async ()=>{ const n=+a.dataset.del, side=a.dataset.side;
+    const m=$("cardMsg"); m.className="msg"; m.textContent="삭제 중…";
+    try{ const r=await apiPost({action:"delimg", adminPw:ADMIN_PW, n, side}); if(r.ok){ delete SRV[n+'_'+side]; renderCardGrid(); m.className="msg warn"; m.textContent="삭제됨."; } else { m.className="msg err"; m.textContent="삭제 실패"; } }
+    catch(e){ m.className="msg err"; m.textContent="네트워크 오류."; } }; });
 }
 </script>
 </body>
