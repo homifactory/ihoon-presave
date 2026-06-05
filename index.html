@@ -195,7 +195,7 @@ function dlImg(n,side,label){
 }
 function renderCard(n){
   $("pcard").innerHTML = faceHTML(n,'f','앞면') + faceHTML(n,'b','뒷면');
-  $("cardName").textContent = `${"정일훈"} 포토카드 — ${CARD_NAMES[n-1]||(n+"번")} (${n}/5)`;
+  $("cardName").textContent = `${"정일훈"} 포토카드 — ${CARD_NAMES[n-1]||(n+"번")}`;
   $("cardSub").textContent = "앞면·뒷면 2장으로 구성된 카드예요. 아래 버튼으로 각각 저장하세요.";
   $("dlFront").onclick = ()=>dlImg(n,'f','앞면');
   $("dlBack").onclick  = ()=>dlImg(n,'b','뒷면');
