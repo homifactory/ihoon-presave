@@ -51,6 +51,13 @@
   th{color:var(--sub);font-weight:600}
   .winners{max-height:280px;overflow:auto}
   .h2{font-size:15px;font-weight:800;margin:0 0 12px}
+  .cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin:12px 0}
+  .cslot{background:#0f0c1a;border:1px solid var(--line);border-radius:12px;padding:8px;text-align:center}
+  .cslot .thumb{aspect-ratio:63/88;border-radius:8px;overflow:hidden;background:#241c38;display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+  .cslot .thumb img{width:100%;height:100%;object-fit:cover}
+  .cslot-name{font-size:11px;color:var(--sub);margin-bottom:6px}
+  .upl{display:block;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:11px;font-weight:700;border-radius:8px;padding:6px;cursor:pointer}
+  .cslot .del{display:block;font-size:10px;color:#ff9eb1;margin-top:5px;cursor:pointer;text-decoration:underline}
   footer{text-align:center;color:var(--sub);font-size:11px;margin-top:26px}
   .setup{background:#3a1f2a;border:1px solid #5a2740;color:#ffd0db;border-radius:12px;
     padding:12px;font-size:12px;margin-bottom:18px;display:none}
@@ -90,6 +97,13 @@
     </div>
     <button class="btn sub" id="refreshBtn">현황 새로고침</button>
     <div class="divider"></div>
+    <div class="h2">🖼️ 포토카드 이미지 (5종)</div>
+    <p class="small">현재 5장은 페이지에 내장돼 모든 참여자에게 보여요. 아래에서 올리면 <b>이 브라우저에서만 미리보기</b>로 바뀌고, 모두에게 바꾸려면 이미지 교체 후 재배포가 필요해요.</p>
+    <div class="cardgrid" id="cardGrid"></div>
+    <div class="msg" id="cardMsg"></div>
+
+    <div class="divider"></div>
+
     <div class="h2">👕 제작 티셔츠 추첨 (30명)</div>
     <label>추첨 시드(선택) — 같은 시드는 항상 같은 결과(공정성 증빙용)</label>
     <input id="seed" type="text" placeholder="예: 정일훈-20260605 (비우면 무작위)">
@@ -115,6 +129,9 @@ const CARDS = {"1": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYE
 
 const $ = id => document.getElementById(id);
 let ADMIN_PW = "";
+const OV_KEY="ihoon_card_override_v1";
+let CARD_OV={}; try{ CARD_OV=JSON.parse(localStorage.getItem(OV_KEY))||{}; }catch(e){ CARD_OV={}; }
+function cardSrc(n){ return CARD_OV[n] || CARDS[n]; }
 
 if(!API_URL){ $("setup").style.display="block"; }
 
@@ -126,11 +143,11 @@ async function api(params){
 
 /* ---------- 참여자: 수령 ---------- */
 function renderCard(n){
-  $("pcard").innerHTML = `<img src="${CARDS[n]}" alt="포토카드 ${n}">`;
+  $("pcard").innerHTML = `<img src="${cardSrc(n)}" alt="포토카드 ${n}">`;
   $("cardName").textContent = `${"정일훈"} 포토카드 — ${CARD_NAMES[n-1]||(n+"번")} (${n}/5)`;
   $("cardSub").textContent = "각 참여자에게는 1종만 배정되며, 다시 입력해도 같은 카드가 나옵니다.";
   $("downloadBtn").onclick = ()=>{ const a=document.createElement("a");
-    a.href=CARDS[n]; a.download=`정일훈_포토카드_${n}.jpg`; a.click(); };
+    a.href=cardSrc(n); a.download=`정일훈_포토카드_${n}.jpg`; a.click(); };
   $("result").style.display="block";
 }
 $("claimBtn").onclick = async ()=>{
@@ -154,7 +171,7 @@ $("adminLink").onclick = ()=>{
   if(a.style.display==="block"){ a.style.display="none"; return; }
   const p=prompt("운영자 비밀번호를 입력하세요");
   if(p===null) return;
-  ADMIN_PW=p; a.style.display="block"; refreshStats();
+  ADMIN_PW=p; a.style.display="block"; refreshStats(); renderCardGrid();
 };
 async function refreshStats(){
   try{ const r=await api({action:"stats"});
@@ -193,6 +210,37 @@ $("exportBtn").onclick = async ()=>{
     }
   }catch(e){ dm.className="msg err"; dm.textContent="네트워크 오류."; }
 };
+
+function fileToCard(file,n,cb){
+  const r=new FileReader();
+  r.onload=()=>{ const im=new Image();
+    im.onload=()=>{ const maxW=945,scale=Math.min(1,maxW/im.width);
+      const w=Math.round(im.width*scale),h=Math.round(im.height*scale);
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(im,0,0,w,h);
+      try{ CARD_OV[n]=cv.toDataURL("image/jpeg",0.85); localStorage.setItem(OV_KEY,JSON.stringify(CARD_OV)); cb&&cb(true); }
+      catch(e){ cb&&cb(false,"이미지가 너무 큽니다."); } };
+    im.onerror=()=>cb&&cb(false,"이미지를 읽을 수 없습니다."); im.src=r.result; };
+  r.readAsDataURL(file);
+}
+function renderCardGrid(){
+  const g=$("cardGrid"); if(!g) return; g.innerHTML="";
+  for(let n=1;n<=5;n++){
+    const ov=!!CARD_OV[n];
+    const cell=document.createElement("div"); cell.className="cslot";
+    cell.innerHTML=`<div class="thumb"><img src="${cardSrc(n)}"></div>`+
+      `<div class="cslot-name">${CARD_NAMES[n-1]||(n+'번')}${ov?' (교체됨)':''}</div>`+
+      `<label class="upl">교체<input type="file" accept="image/*" data-n="${n}" hidden></label>`+
+      (ov?`<a class="del" data-del="${n}">되돌리기</a>`:``);
+    g.appendChild(cell);
+  }
+  g.querySelectorAll('input[type=file]').forEach(inp=>{ inp.onchange=e=>{ const f=e.target.files[0]; if(!f)return;
+    const m=$("cardMsg"); m.className="msg"; m.textContent="저장 중…";
+    fileToCard(f,+inp.dataset.n,(ok,err)=>{ renderCardGrid(); m.className="msg "+(ok?"ok":"err");
+      m.textContent=ok?`${inp.dataset.n}번 카드 미리보기를 바꿨어요(이 브라우저만).`:(err||"실패"); }); }; });
+  g.querySelectorAll('[data-del]').forEach(a=>{ a.onclick=()=>{ delete CARD_OV[+a.dataset.del];
+    localStorage.setItem(OV_KEY,JSON.stringify(CARD_OV)); renderCardGrid(); }; });
+}
 </script>
 </body>
 </html>
