@@ -217,12 +217,16 @@ $("claimBtn").onclick = async ()=>{
 };
 
 /* ---------- 운영자 ---------- */
-$("adminLink").onclick = ()=>{
+$("adminLink").onclick = async ()=>{
   const a=$("admin");
   if(a.style.display==="block"){ a.style.display="none"; return; }
   const p=prompt("운영자 비밀번호를 입력하세요");
   if(p===null) return;
-  ADMIN_PW=p; a.style.display="block"; refreshStats(); renderCardGrid(); prefillList();
+  try{
+    const r=await api({action:"list", adminPw:p});
+    if(r && r.ok){ ADMIN_PW=p; a.style.display="block"; refreshStats(); renderCardGrid(); prefillList(); }
+    else { alert("운영자 비밀번호가 올바르지 않습니다."); }
+  }catch(e){ alert("네트워크 오류로 확인하지 못했어요. 잠시 후 다시 시도해 주세요."); }
 };
 async function refreshStats(){
   try{ const r=await api({action:"stats"});
